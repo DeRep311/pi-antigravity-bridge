@@ -1,0 +1,22 @@
+{
+  "name": "pi-antigravity-bridge",
+  "version": "0.1.0",
+  "description": "Pi provider that runs Gemini models through the official Antigravity CLI (agy acp), with Pi tools bridged over MCP and native agy tools denied.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi", "gemini", "antigravity", "agy", "acp"],
+  "files": ["src", "README.md"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=1.5.1",
+    "@earendil-works/pi-coding-agent": ">=1.5.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
