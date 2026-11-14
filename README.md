@@ -65,7 +65,7 @@ Pi (streamSimple) ──ACP JSON-RPC──▶ agy acp --gemini-dir <temp dir>
 |-------|--------------|
 | `src/engine.ts` | Maps each Pi session to an agy ACP session; streams text and thinking; turns MCP tool calls into Pi tool calls and resumes agy with Pi's results. |
 | `src/mcp-shim.mjs`, `src/relay.ts` | Stdio MCP server that agy starts per session; it forwards `tools/list` and `tools/call` to the bridge over a Unix socket. |
-| `src/isolation.ts`, `src/deny-native-hook.mjs` | Temporary agy config directory with a `PreToolUse` hook that only allows `mcp_pi_*` tools. It is deleted on exit. |
+| `src/isolation.ts`, `src/deny-native-hook.mjs` | Temporary agy config directory with a `PreToolUse` hook that only allows the bridge's own MCP tools (`mcp_<random server name>_*`; the server name is regenerated per Pi process). It is deleted on exit. |
 | `src/schema.ts` | Rewrites Pi tool schemas into the JSON Schema subset Gemini accepts (string-only enums). |
 
 ## Limits
@@ -74,13 +74,15 @@ Pi (streamSimple) ──ACP JSON-RPC──▶ agy acp --gemini-dir <temp dir>
 - When Pi rewrites history (compaction, edits, branching), the bridge opens a fresh agy session and replays the transcript as text.
 - One `agy acp` process runs per Pi process and is stopped when Pi exits.
 - Tool calls have been tested up to 70 seconds. agy has an MCP timeout whose default is unknown, so very long tools may be cut off.
+- The environment of Pi is passed through to `agy`, and the deny hook and MCP shim run with the same Node binary as Pi (`process.execPath`).
+- If `agy` itself fails, the last ~2 KB of its stderr is appended to the error message.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
 | `You are not logged into Antigravity` | Run `agy` and sign in, then retry. |
-| `agy: command not found` | Install the Antigravity CLI, or set `PI_AGY_BIN=/path/to/agy`. |
+| `spawn agy ENOENT` (or `agy: command not found`) | Install the Antigravity CLI, or set `PI_AGY_BIN=/path/to/agy`. |
 | A subagent still uses its old model | Set it in `/gentle:profiles` and press `d`, then start a new session. |
 | Gemini rejects a request with `INVALID_ARGUMENT … parameters` | A tool schema uses a construct Gemini does not support; open an issue with the message. |
 

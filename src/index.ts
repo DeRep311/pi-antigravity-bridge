@@ -6,9 +6,10 @@ import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTo
 import { AcpClient } from "./acp.ts";
 import { BridgeEngine } from "./engine.ts";
 import { createIsolation } from "./isolation.ts";
+import { generateServerName, resolveContext, toolPrefix } from "./naming.ts";
 import { MODELS } from "./models.ts";
 import { startRelay } from "./relay.ts";
-import type { McpServerSpec, PiMessage } from "./types.ts";
+import type { McpServerSpec, PiMessage, PiTool } from "./types.ts";
 
 const PROVIDER = "antigravity-bridge";
 const SHIM = fileURLToPath(new URL("./mcp-shim.mjs", import.meta.url));
@@ -20,7 +21,8 @@ let runtime: Promise<Runtime> | undefined;
 function getRuntime(): Promise<Runtime> {
   if (runtime) return runtime;
   const p = (async () => {
-    const iso = createIsolation();
+    const serverName = generateServerName();
+    const iso = createIsolation({ allowedPrefix: toolPrefix(serverName) });
     let relayPath = "";
     const acp = new AcpClient({ command: process.env.PI_AGY_BIN || "agy", args: ["acp", "--gemini-dir", iso.dir] });
     const engine = new BridgeEngine({
@@ -28,7 +30,7 @@ function getRuntime(): Promise<Runtime> {
       api: PROVIDER,
       getAcp: () => acp.getAcp(),
       mcpServer: (key: string): McpServerSpec => ({
-        name: "pi", command: process.execPath, args: [SHIM],
+        name: serverName, command: process.execPath, args: [SHIM],
         env: [{ name: "PI_AGY_RELAY", value: relayPath }, { name: "PI_AGY_KEY", value: key }],
       }),
     });
@@ -47,12 +49,13 @@ function getRuntime(): Promise<Runtime> {
 export function streamSimple(model: any, context: any, options?: any) {
   const stream = createAssistantMessageEventStream();
   try { options?.onPayload?.({ model: model.id, systemPrompt: getCurrentSystemPrompt(context.messages) }); } catch { /* ignored */ }
+  const ctx = resolveContext<PiTool>(getCurrentSystemPrompt(context.messages), context.systemPrompt, getCurrentTools(context.messages), context.tools);
   const input = {
     key: options?.sessionId ?? fallbackKey,
     modelId: model.id,
     reasoning: options?.reasoning,
-    systemPrompt: getCurrentSystemPrompt(context.messages) ?? "",
-    tools: getCurrentTools(context.messages) ?? [],
+    systemPrompt: ctx.systemPrompt,
+    tools: ctx.tools,
     messages: (context.messages as any[]).filter((m) => m.role !== "system") as PiMessage[],
     cwd: process.cwd(),
     signal: options?.signal,

@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveVariant } from "./models.ts";
 import { sanitizeSchema } from "./schema.ts";
+import { isAllowedTool, toolPrefix } from "./naming.ts";
 import { digestMessages, renderNewUserMessages, renderReplayPrompt } from "./transcript.ts";
 import type {
   AcpLike, AssistantMessage, EventSink, McpServerSpec, McpToolResult, PiMessage, PiTool, StopReason,
@@ -160,8 +161,9 @@ export class MessageBuilder {
   }
 }
 
-function pickOption(options: { optionId: string; kind: string }[], prefix: "allow" | "reject") {
-  return options.find((o) => o.kind === `${prefix}_once`) ?? options.find((o) => o.kind.startsWith(prefix));
+/** Only the one-shot variants are ever chosen: never allow_always / reject_always. */
+function pickOption(options: { optionId: string; kind: string }[], verdict: "allow" | "reject") {
+  return options.find((o) => o.kind === `${verdict}_once`);
 }
 
 export class BridgeEngine {
@@ -255,7 +257,7 @@ export class BridgeEngine {
     if (st) this.discard(st, true);
     st = await this.createSession(input, toolsDigest, systemDigest);
     this.attach(st, input, sink, messages);
-    this.prompt(st, renderReplayPrompt(input.systemPrompt, messages));
+    this.prompt(st, renderReplayPrompt(input.systemPrompt, messages, toolPrefix(this.deps.mcpServer(input.key).name)));
   }
 
   private async createSession(input: StreamInput, toolsDigest: string, systemDigest: string): Promise<SessionState> {
@@ -402,8 +404,9 @@ export class BridgeEngine {
     });
     acp.onRequest(async (method, params) => {
       if (method === "session/request_permission") {
-        const name = String(params?.toolCall?.name ?? "");
-        const option = pickOption(params?.options ?? [], name.startsWith("mcp_pi_") ? "allow" : "reject");
+        const st = this.bySessionId.get(params?.sessionId);
+        const allowed = !!st && isAllowedTool(params?.toolCall?.name, toolPrefix(this.deps.mcpServer(st.key).name));
+        const option = pickOption(params?.options ?? [], allowed ? "allow" : "reject");
         return { outcome: option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" } };
       }
       throw new Error(`${method} is not supported by pi-antigravity-bridge`);

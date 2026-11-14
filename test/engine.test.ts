@@ -47,7 +47,7 @@ function setup() {
   const acp = new FakeAcp();
   const engine = new BridgeEngine({
     getAcp: async () => acp,
-    mcpServer: (key) => ({ name: "pi", command: "node", args: ["shim.mjs"], env: [{ name: "PI_AGY_KEY", value: key }] }),
+    mcpServer: (key) => ({ name: "pi1a2b3c4d", command: "node", args: ["shim.mjs"], env: [{ name: "PI_AGY_KEY", value: key }] }),
     provider: "antigravity-bridge",
     api: "antigravity-bridge",
     now: () => 1000,
@@ -220,9 +220,22 @@ test("permission requests: Pi MCP tools are allowed once, everything else is rej
     { optionId: "a1", kind: "allow_once" }, { optionId: "a2", kind: "allow_always" },
     { optionId: "r1", kind: "reject_once" }, { optionId: "r2", kind: "reject_always" },
   ];
-  assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name: "mcp_pi_read" }, options }),
+  assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name: "mcp_pi1a2b3c4d_read" }, options }),
     { outcome: { outcome: "selected", optionId: "a1" } });
   assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name: "write_file" }, options }),
+    { outcome: { outcome: "selected", optionId: "r1" } });
+  for (const name of ["mcp_pi_read", "mcp_pi1a2b3c4d_", "mcp_pi1a2b3c4d_read\nrm", ["mcp_pi1a2b3c4d_x"]]) {
+    assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name }, options }),
+      { outcome: { outcome: "selected", optionId: "r1" } });
+  }
+  // only *_once options are ever chosen
+  const onlyAlways = [{ optionId: "a2", kind: "allow_always" }, { optionId: "r2", kind: "reject_always" }];
+  assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name: "mcp_pi1a2b3c4d_read" }, options: onlyAlways }),
+    { outcome: { outcome: "cancelled" } });
+  assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "s1", toolCall: { name: "write_file" }, options: onlyAlways }),
+    { outcome: { outcome: "cancelled" } });
+  // unknown session: nothing is allowed
+  assert.deepEqual(await acp.clientRequest("session/request_permission", { sessionId: "nope", toolCall: { name: "mcp_pi1a2b3c4d_read" }, options }),
     { outcome: { outcome: "selected", optionId: "r1" } });
   await assert.rejects(acp.clientRequest("fs/write_text_file", { path: "/etc/x" }), /not supported/);
 });

@@ -4,12 +4,14 @@ import type { ImageBlock, PiMessage, TextBlock } from "./types.ts";
 
 export type PromptBlock = TextBlock | ImageBlock;
 
-export const TOOL_POLICY = [
+export function toolPolicy(prefix: string): string {
+  return [
   "<tool_policy>",
   "You are running as a model inside the Pi coding harness. Your built-in tools (file edits, shell, browser, search, subagents) are disabled and every call to them is denied.",
-  "Use ONLY the tools whose names start with `mcp_pi_`; they are the harness tools described in the system instructions (for example `read` is `mcp_pi_read`).",
+  "Use ONLY the tools whose names start with `" + prefix + "`; they are the harness tools described in the system instructions (for example `read` is `" + prefix + "read`).",
   "</tool_policy>",
 ].join("\n");
+}
 
 /** Stable digest of the content Pi and agy share; ignores timestamps, usage and other metadata. */
 export function digestMessages(messages: PiMessage[]): string {
@@ -59,7 +61,7 @@ function renderHistoryEntry(m: PiMessage, toolNames: Map<string, string>): strin
  * Prompt for a fresh agy session: system instructions, tool policy, prior history as text and the
  * trailing user message(s) as live blocks. A transcript that ends in tool results asks agy to continue.
  */
-export function renderReplayPrompt(systemPrompt: string, messages: PiMessage[]): PromptBlock[] {
+export function renderReplayPrompt(systemPrompt: string, messages: PiMessage[], prefix: string): PromptBlock[] {
   let tail = messages.length;
   while (tail > 0 && messages[tail - 1].role === "user") tail--;
   const history = messages.slice(0, tail);
@@ -68,7 +70,7 @@ export function renderReplayPrompt(systemPrompt: string, messages: PiMessage[]):
   const toolNames = new Map<string, string>();
   const header = [
     `<system_instructions>\n${systemPrompt}\n</system_instructions>`,
-    TOOL_POLICY,
+    toolPolicy(prefix),
   ];
   if (history.length > 0) {
     const rendered = history.map((m) => renderHistoryEntry(m, toolNames)).filter(Boolean).join("\n\n");

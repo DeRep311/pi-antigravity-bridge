@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { digestMessages, renderReplayPrompt, renderNewUserMessages, TOOL_POLICY } from "../src/transcript.ts";
+import { digestMessages, renderReplayPrompt, renderNewUserMessages, toolPolicy } from "../src/transcript.ts";
 import type { PiMessage } from "../src/types.ts";
 
 const user = (text: string): PiMessage => ({ role: "user", content: text, timestamp: 1 });
@@ -26,17 +26,18 @@ test("replay prompt carries system prompt, tool policy, history and the last use
     toolResult("t1", "file body"),
     assistant("done"),
     user("second question"),
-  ]);
+  ], "mcp_pix_");
   const text = blocks.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n");
   assert.match(text, /<system_instructions>\nSYS RULES\n<\/system_instructions>/);
-  assert.ok(text.includes(TOOL_POLICY));
+  assert.ok(text.includes(toolPolicy("mcp_pix_")));
+  assert.ok(text.includes("`mcp_pix_`") && !text.includes("mcp_pi_"));
   assert.match(text, /<conversation_history>[\s\S]*\[user\]\nfirst[\s\S]*\[tool_call read\] \{"path":"a.ts"\}[\s\S]*\[tool_result read\]\nfile body[\s\S]*\[assistant\]\ndone[\s\S]*<\/conversation_history>/);
   assert.ok(text.trimEnd().endsWith("second question"));
   assert.ok(!/<conversation_history>[\s\S]*second question[\s\S]*<\/conversation_history>/.test(text));
 });
 
 test("replay ending in tool results asks the model to continue from them", () => {
-  const blocks = renderReplayPrompt("S", [user("go"), assistant("", [{ type: "toolCall", id: "t1", name: "read", arguments: {} }]), toolResult("t1", "boom", true)]);
+  const blocks = renderReplayPrompt("S", [user("go"), assistant("", [{ type: "toolCall", id: "t1", name: "read", arguments: {} }]), toolResult("t1", "boom", true)], "mcp_pix_");
   const text = blocks.map((b) => (b as { text?: string }).text ?? "").join("\n");
   assert.match(text, /\[tool_result read \(error\)\]\nboom/);
   assert.match(text, /Continue the task from the last tool result above\.$/);

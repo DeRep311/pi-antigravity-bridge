@@ -90,3 +90,19 @@ test("spawn failure rejects getAcp", async () => {
   const c = new AcpClient({ command: "/nonexistent/agy-binary", args: [] });
   await assert.rejects(c.getAcp());
 });
+
+test("child exit error carries the tail of agy stderr (bounded)", async () => {
+  const c = make();
+  try {
+    const acp = await c.getAcp();
+    const err = await acp.request("die_err", {}).catch((e) => e as Error);
+    assert.match(err.message, /exited \(code 4/);
+    assert.match(err.message, /LOGIN REQUIRED/);
+    assert.ok(err.message.length < 2300);
+  } finally { c.kill(); }
+});
+
+test("spawn failure message names the missing binary", async () => {
+  const c = new AcpClient({ command: "agy-missing-binary-xyz", args: [] });
+  await assert.rejects(c.getAcp(), /ENOENT/);
+});

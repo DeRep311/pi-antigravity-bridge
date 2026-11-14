@@ -18,6 +18,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     }
     case "notify_then": send({ jsonrpc: "2.0", method: "session/update", params: { n: 1 } }); return send({ jsonrpc: "2.0", id: m.id, result: {} });
     case "hang": return;
+    case "die_err": process.stderr.write("x".repeat(5000) + "LOGIN REQUIRED"); return setTimeout(() => process.exit(4), 50);
     case "die": return process.exit(3);
     case "pid": return send({ jsonrpc: "2.0", id: m.id, result: { pid: process.pid } });
   }

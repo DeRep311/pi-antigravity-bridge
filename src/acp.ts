@@ -12,6 +12,7 @@ export class AcpClient implements AcpLike {
   private child?: ChildProcess;
   private starting?: Promise<void>;
   private nextId = 1;
+  private stderrTail = "";
   private pending = new Map<number, Pending>();
   private noteHandler: (method: string, params: any) => void = () => {};
   private reqHandler?: (method: string, params: any) => Promise<any>;
@@ -39,21 +40,31 @@ export class AcpClient implements AcpLike {
 
   private async start(): Promise<void> {
     const child = spawn(this.opts.command, this.opts.args, {
-      cwd: this.opts.cwd, env: this.opts.env ?? process.env, stdio: ["pipe", "pipe", "ignore"],
+      cwd: this.opts.cwd, env: this.opts.env ?? process.env, stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
+    this.stderrTail = "";
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (d: string) => { this.stderrTail = (this.stderrTail + d).slice(-2048); });
+    child.stderr!.on("error", () => {});
     process.once("exit", this.exitHook);
     const spawned = new Promise<void>((resolve, reject) => {
       child.once("spawn", () => resolve());
-      child.once("error", reject);
+      child.once("error", (e) => reject(this.withStderr(e)));
     });
     child.stdin!.on("error", () => {});
-    child.on("error", (err) => this.onGone(child, err));
-    child.on("exit", (code, signal) => this.onGone(child, new Error(`agy acp exited (code ${code}, signal ${signal})`)));
+    child.on("error", (err) => this.onGone(child, this.withStderr(err)));
+    child.on("exit", (code, signal) => this.onGone(child, this.withStderr(new Error(`agy acp exited (code ${code}, signal ${signal})`))));
     createInterface({ input: child.stdout! }).on("line", (line) => this.onLine(child, line));
     this.setRef(child, false);
     await spawned;
     await this.send(child, "initialize", { protocolVersion: 1, clientCapabilities: {} });
+  }
+
+  private withStderr(err: Error): Error {
+    const tail = this.stderrTail.trim();
+    if (tail) err.message = `${err.message}\nagy stderr: ${tail}`;
+    return err;
   }
 
   private onGone(child: ChildProcess, err: Error) {
@@ -68,7 +79,7 @@ export class AcpClient implements AcpLike {
 
   /** Keep the host process alive only while requests are in flight, so Pi's print mode can exit when idle. */
   private setRef(child: ChildProcess, ref: boolean) {
-    for (const h of [child, child.stdin, child.stdout] as any[]) {
+    for (const h of [child, child.stdin, child.stdout, child.stderr] as any[]) {
       if (!h) continue;
       if (ref) h.ref?.();
       else h.unref?.();

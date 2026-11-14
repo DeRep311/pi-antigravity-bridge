@@ -10,10 +10,10 @@ const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 export type Isolation = { dir: string; cleanup(): void };
 
-export function createIsolation(opts: { hookScript?: string } = {}): Isolation {
+export function createIsolation(opts: { hookScript?: string; allowedPrefix?: string } = {}): Isolation {
   const dir = mkdtempSync(join(tmpdir(), "pi-agy-"));
   mkdirSync(join(dir, "config"), { recursive: true });
-  const command = `${shq(process.execPath)} ${shq(opts.hookScript ?? HOOK_SCRIPT)}`;
+  const command = `PI_AGY_ALLOWED_PREFIX=${shq(opts.allowedPrefix ?? "")} ${shq(process.execPath)} ${shq(opts.hookScript ?? HOOK_SCRIPT)}`;
   const hooks = { "pi-guard": { PreToolUse: [{ matcher: "*", hooks: [{ command, timeout: 10 }] }] } };
   writeFileSync(join(dir, "config", "hooks.json"), JSON.stringify(hooks, null, 2));
   let done = false;

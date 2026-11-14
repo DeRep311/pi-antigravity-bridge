@@ -6,8 +6,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createIsolation } from "../src/isolation.ts";
 
+const PREFIX = "mcp_pi1a2b3c4d_";
+
 test("isolated gemini dir has hooks.json with a PreToolUse '*' hook; cleanup removes it", () => {
-  const iso = createIsolation();
+  const iso = createIsolation({ allowedPrefix: PREFIX });
   try {
     assert.ok(iso.dir.startsWith(tmpdir()));
     const hooks = JSON.parse(readFileSync(join(iso.dir, "config", "hooks.json"), "utf8"));
@@ -18,16 +20,18 @@ test("isolated gemini dir has hooks.json with a PreToolUse '*' hook; cleanup rem
     assert.equal(entry[0].hooks[0].timeout, 10);
     assert.ok(entry[0].hooks[0].command.includes(process.execPath));
     assert.ok(entry[0].hooks[0].command.includes("deny-native-hook.mjs"));
+    assert.ok(entry[0].hooks[0].command.includes(`PI_AGY_ALLOWED_PREFIX='${PREFIX}'`));
 
     const run = (name: string) => {
       const r = spawnSync("sh", ["-c", entry[0].hooks[0].command], { input: JSON.stringify({ toolCall: { name, args: {} } }), encoding: "utf8" });
       assert.equal(r.status, 0);
       return JSON.parse(r.stdout);
     };
-    assert.deepEqual(run("mcp_pi_read"), { decision: "allow" });
+    assert.deepEqual(run(`${PREFIX}read`), { decision: "allow" });
     const denied = run("write_file");
     assert.equal(denied.decision, "deny");
-    assert.match(denied.reason, /mcp_pi_/);
+    assert.ok(denied.reason.includes(`${PREFIX}*`));
+    assert.equal(run("mcp_pi_read").decision, "deny");
     assert.equal(run("mcp_other_tool").decision, "deny");
     assert.equal(run("run_command").decision, "deny");
   } finally { iso.cleanup(); }
