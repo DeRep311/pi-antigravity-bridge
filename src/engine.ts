@@ -6,6 +6,7 @@
 // and lets the same agy prompt continue into the new Pi stream.
 import { randomUUID } from "node:crypto";
 import { resolveVariant } from "./models.ts";
+import { sanitizeSchema } from "./schema.ts";
 import { digestMessages, renderNewUserMessages, renderReplayPrompt } from "./transcript.ts";
 import type {
   AcpLike, AssistantMessage, EventSink, McpServerSpec, McpToolResult, PiMessage, PiTool, StopReason,
@@ -180,7 +181,7 @@ export class BridgeEngine {
   /** Pi tools for the shim's tools/list, as MCP tool descriptors. */
   toolsFor(key: string) {
     const tools = this.creatingTools.get(key) ?? this.states.get(key)?.tools ?? [];
-    return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
+    return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: sanitizeSchema(t.parameters) }));
   }
 
   /** Entry point for the shim's tools/call: resolves when Pi delivers the tool result. */

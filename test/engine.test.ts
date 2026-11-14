@@ -106,6 +106,13 @@ test("tools are listable while agy is still creating the session (tools/list dur
   assert.deepEqual(listed, [{ name: "read", description: "Read a file", inputSchema: { type: "object", properties: { path: { type: "string" } } } }]);
 });
 
+test("tool schemas are sanitized for Gemini before agy lists them", async () => {
+  const { engine } = setup();
+  engine.stream(input([user("hi")], { tools: [{ name: "review", description: "r", parameters: { type: "object", properties: { committedOnly: { enum: [true], type: "boolean" } } } }] }), new Sink());
+  await tick();
+  assert.deepEqual(engine.toolsFor("k1"), [{ name: "review", description: "r", inputSchema: { type: "object", properties: { committedOnly: { type: "boolean" } } } }]);
+});
+
 test("tool loop: parks the MCP call, ends with toolUse, resumes with Pi's tool result on the next call", async () => {
   const { acp, engine } = setup();
   const first = new Sink();
