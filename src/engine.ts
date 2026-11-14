@@ -167,6 +167,8 @@ export class BridgeEngine {
   private states = new Map<string, SessionState>();
   private bySessionId = new Map<string, SessionState>();
   private wired = new WeakSet<AcpLike>();
+  /** Tools of sessions being created: agy lists MCP tools while session/new is still in flight. */
+  private creatingTools = new Map<string, PiTool[]>();
   private now: () => number;
   private deps: EngineDeps;
 
@@ -177,8 +179,8 @@ export class BridgeEngine {
 
   /** Pi tools for the shim's tools/list, as MCP tool descriptors. */
   toolsFor(key: string) {
-    const st = this.states.get(key);
-    return (st?.tools ?? []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
+    const tools = this.creatingTools.get(key) ?? this.states.get(key)?.tools ?? [];
+    return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   }
 
   /** Entry point for the shim's tools/call: resolves when Pi delivers the tool result. */
@@ -258,7 +260,13 @@ export class BridgeEngine {
   private async createSession(input: StreamInput, toolsDigest: string, systemDigest: string): Promise<SessionState> {
     const acp = await this.deps.getAcp();
     this.wire(acp);
-    const res = await acp.request("session/new", { cwd: input.cwd, mcpServers: [this.deps.mcpServer(input.key)] });
+    this.creatingTools.set(input.key, input.tools);
+    let res: any;
+    try {
+      res = await acp.request("session/new", { cwd: input.cwd, mcpServers: [this.deps.mcpServer(input.key)] });
+    } finally {
+      this.creatingTools.delete(input.key);
+    }
     const available: string[] = (res?.models?.availableModels ?? []).map((m: any) => m.modelId);
     const st: SessionState = {
       key: input.key, acp, sessionId: res.sessionId, available, variant: "", modelId: input.modelId,

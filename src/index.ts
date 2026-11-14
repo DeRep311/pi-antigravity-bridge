@@ -34,7 +34,9 @@ function getRuntime(): Promise<Runtime> {
     });
     const relay = await startRelay(engine);
     relayPath = relay.path;
-    process.once("exit", () => acp.kill());
+    // Ordered shutdown: stop agy first so it cannot recreate files, then remove the isolated dir.
+    process.removeListener("exit", iso.cleanup);
+    process.once("exit", () => { acp.kill("SIGKILL"); iso.cleanup(); });
     return { engine };
   })();
   runtime = p;

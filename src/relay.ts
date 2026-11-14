@@ -38,10 +38,14 @@ export async function startRelay(engine: RelayEngine, socketPath?: string): Prom
     });
   });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => resolve()); });
+  // Idle relay must not keep the host alive; open shim connections (in-flight tool calls) still do.
+  server.unref();
+  const removeOwnDir = () => { if (ownDir) rmSync(ownDir, { recursive: true, force: true }); };
+  process.once("exit", removeOwnDir);
   return {
     path,
     close: () => new Promise<void>((resolve) => {
-      server.close(() => { if (ownDir) rmSync(ownDir, { recursive: true, force: true }); resolve(); });
+      server.close(() => { process.removeListener("exit", removeOwnDir); removeOwnDir(); resolve(); });
       server.closeAllConnections?.();
     }),
   };

@@ -19,6 +19,24 @@ test("initializes once with protocolVersion 1 and empty clientCapabilities, then
   } finally { c.kill(); }
 });
 
+test("an idle client and relay do not keep the host process alive (Pi -p must exit)", async () => {
+  const { spawn } = await import("node:child_process");
+  const script = fileURLToPath(new URL("./fixtures/idle-exit.ts", import.meta.url));
+  const child = spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "inherit"] });
+  let out = "";
+  child.stdout.on("data", (d) => { out += d; });
+  const code = await new Promise<number | null>((resolve) => {
+    const timer = setTimeout(() => { child.kill(); resolve(-1); }, 5000);
+    child.on("exit", (c) => { clearTimeout(timer); resolve(c); });
+  });
+  const [tag, sock] = out.trim().split(" ");
+  assert.equal(tag, "IDLE");
+  assert.equal(code, 0, "process should exit by itself once idle");
+  const { existsSync } = await import("node:fs");
+  const { dirname } = await import("node:path");
+  assert.equal(existsSync(dirname(sock)), false, "relay socket dir is removed on exit");
+});
+
 test("JSON-RPC error responses reject with message, code and data", async () => {
   const c = make();
   try {

@@ -93,6 +93,19 @@ test("text turn: creates a session, selects the variant, streams thinking and te
   assert.deepEqual(done.message.usage, { input: 10, output: 4, cacheRead: 3, cacheWrite: 0, reasoning: 2, totalTokens: 17, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 });
 
+test("tools are listable while agy is still creating the session (tools/list during session/new)", async () => {
+  const { acp, engine } = setup();
+  let listed: unknown[] = [];
+  const original = acp.request.bind(acp);
+  acp.request = async (method: string, params: any) => {
+    if (method === "session/new") listed = engine.toolsFor("k1");
+    return original(method, params);
+  };
+  engine.stream(input([user("hi")]), new Sink());
+  await tick();
+  assert.deepEqual(listed, [{ name: "read", description: "Read a file", inputSchema: { type: "object", properties: { path: { type: "string" } } } }]);
+});
+
 test("tool loop: parks the MCP call, ends with toolUse, resumes with Pi's tool result on the next call", async () => {
   const { acp, engine } = setup();
   const first = new Sink();

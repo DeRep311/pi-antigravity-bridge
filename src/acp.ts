@@ -15,7 +15,9 @@ export class AcpClient implements AcpLike {
   private pending = new Map<number, Pending>();
   private noteHandler: (method: string, params: any) => void = () => {};
   private reqHandler?: (method: string, params: any) => Promise<any>;
-  private exitHook = () => this.kill();
+  // On host exit agy is SIGKILLed: its isolated config is disposable, and a graceful stop would
+  // rewrite files into the gemini dir after isolation cleanup removed it.
+  private exitHook = () => this.kill("SIGKILL");
 
   constructor(opts: AcpClientOptions) {
     this.opts = opts;
@@ -49,6 +51,7 @@ export class AcpClient implements AcpLike {
     child.on("error", (err) => this.onGone(child, err));
     child.on("exit", (code, signal) => this.onGone(child, new Error(`agy acp exited (code ${code}, signal ${signal})`)));
     createInterface({ input: child.stdout! }).on("line", (line) => this.onLine(child, line));
+    this.setRef(child, false);
     await spawned;
     await this.send(child, "initialize", { protocolVersion: 1, clientCapabilities: {} });
   }
@@ -63,6 +66,19 @@ export class AcpClient implements AcpLike {
     for (const p of all) p.reject(err);
   }
 
+  /** Keep the host process alive only while requests are in flight, so Pi's print mode can exit when idle. */
+  private setRef(child: ChildProcess, ref: boolean) {
+    for (const h of [child, child.stdin, child.stdout] as any[]) {
+      if (!h) continue;
+      if (ref) h.ref?.();
+      else h.unref?.();
+    }
+  }
+
+  private settle(child: ChildProcess) {
+    if (this.pending.size === 0 && this.child === child) this.setRef(child, false);
+  }
+
   private write(child: ChildProcess, msg: object) {
     child.stdin!.write(JSON.stringify(msg) + "\n");
   }
@@ -70,8 +86,12 @@ export class AcpClient implements AcpLike {
   private send(child: ChildProcess, method: string, params: unknown): Promise<any> {
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
-      this.pending.set(id, { resolve, reject });
-      try { this.write(child, { jsonrpc: "2.0", id, method, params }); } catch (e) { this.pending.delete(id); reject(e as Error); }
+      this.pending.set(id, {
+        resolve: (v) => { this.settle(child); resolve(v); },
+        reject: (e) => { this.settle(child); reject(e); },
+      });
+      this.setRef(child, true);
+      try { this.write(child, { jsonrpc: "2.0", id, method, params }); } catch (e) { this.pending.delete(id); this.settle(child); reject(e as Error); }
     });
   }
 
@@ -120,10 +140,10 @@ export class AcpClient implements AcpLike {
   onNotification(handler: (method: string, params: any) => void): void { this.noteHandler = handler; }
   onRequest(handler: (method: string, params: any) => Promise<any>): void { this.reqHandler = handler; }
 
-  kill(): void {
+  kill(signal: NodeJS.Signals = "SIGTERM"): void {
     const child = this.child;
     if (!child) return;
     this.onGone(child, new Error("agy acp exited (killed)"));
-    child.kill();
+    child.kill(signal);
   }
 }
