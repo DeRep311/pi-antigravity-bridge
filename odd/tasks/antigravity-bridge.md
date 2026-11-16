@@ -28,7 +28,7 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - [x] T10 [S4.2] Reject tool calls whose name is not in the current turn's offered tools (error result to agy, never a Pi toolCall). Route: inline. Commit: 66c5118
 - [x] T11 [S4.3] Reject tool calls that arrive when no prompt is active, so they never leak into the next turn. Route: inline. Commit: 66c5118
 - [x] T12 [S4.4] acp.ts: kill the child when initialize fails (no orphan) and time out initialize so a silent agy rejects instead of hanging. Route: inline. Commit: 410b5cc
-- [ ] T13 [S4] Native review of the hardening commits. Route: native review. Commit: —
+- [x] T13 [S4] Native review of the hardening commits. Route: native review (lineage review-dbe1ea54d2b9d9dc, approved, acknowledged). Commit: b0fc358..30e0300
 
 ## Log
 
@@ -48,3 +48,4 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - L14 (evidence, Judgment Day 2026-11-16): APPROVED after 1 round; CRITICAL JD-A-001/JD-B-001 (superseded same-key stream hung) fixed in f034113; 43/43 tests; warnings JD-A-002/JD-B-002, JD-A-003/JD-B-004, JD-B-003, JD-B-005 became S4.1-S4.4.
 - L15 (user): "comitea y despues arregla los puntos antes de publicar y passamos otra review"
 - L16 (evidence, T9-T12): RED observed for 6 new tests on pre-fix code (2 abort failures, 2 tool-call hangs, 2 acp init failures); GREEN 49/49. Live e2e via Gentle Shell pi: PONG, read, write OK; --tools read → model reports NOWRITE, no hacked.txt; 0 leftover agy processes.
+- L17 (evidence, T13): independent verify (task mwj9hjca-5-ge72) S4.1-S4.4 pass, no regressions. Native review b0fc358..30e0300 (risk, resilience, reliability) approved and acknowledged; advisories only: fixed 100ms sleep before liveness probe in acp init tests; 30s default initTimeoutMs may kill a slow cold start; discard() fail on attached builder (safe: complete() clears st.builder before finishing).
