@@ -109,14 +109,16 @@ test("spawn failure message names the missing binary", async () => {
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function initCase(mode: "fail" | "hang", extra: object = {}) {
-  const { mkdtempSync, readFileSync } = await import("node:fs");
-  const { join } = await import("node:path");
+  const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+  const { join, dirname } = await import("node:path");
   const { tmpdir } = await import("node:os");
   const pidfile = join(mkdtempSync(join(tmpdir(), "acp-init-")), "pid");
   const c = new AcpClient({ command: process.execPath, args: [fake], env: { ...process.env, FAKE_ACP_INIT: mode, FAKE_ACP_PIDFILE: pidfile }, ...extra });
   const err = await c.getAcp().then(() => null, (e) => e as Error);
   await new Promise((r) => setTimeout(r, 100));
-  return { c, err, pid: Number(readFileSync(pidfile, "utf8")) };
+  const pid = Number(readFileSync(pidfile, "utf8"));
+  rmSync(dirname(pidfile), { recursive: true, force: true });
+  return { c, err, pid };
 }
 
 test("initialize failure kills the agy child instead of orphaning it", async () => {
