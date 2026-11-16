@@ -8,6 +8,11 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - S1. Gemini must be assignable as a model to any phase/subagent: "la idea es que pueda asignarle un modelo a una de las fases como de apply o cualquiera con gemini, despues como lo llame no me importa pero quiero que este integrado con esto". Target usage: `~/.gentle-shell/agent/subagents.json` → `"gentle-ai-worker": {"model": "antigravity-bridge/<agy-model-id>"}`.
 - S2. It must be a provider that calls the agy CLI: "no podemos usarlo con agy? osea simular el bridge con los providers pero que llame las cli de agy?" / "igual como proveedor pero no podemos usar el agy merido?". Auth stays with the official `agy` binary; the bridge never reads or extracts tokens ("usariamos agy que es la herramienta oficial osea no violamos servicios").
 - S3. Integration with the harness: Pi tools execute through Pi (edit surfaces, ODD, review); agy native tools (run_command, write_to_file, replace_file_content, view_file, browser_*, …) must not act on their own. The bridge must not inherit the user's global agy settings (`toolPermission: always-proceed`, `agentMode: accept-edits`).
+- S4. Judgment Day hardening before publishing: "comitea y despues arregla los puntos antes de publicar y passamos otra review". The points are the four Judgment Day warnings listed to the user:
+  "1. Si apretás Esc mientras se está creando la sesión, la cancelación se pierde y el turno sigue igual (`engine.ts:301`)."
+  "2. Si el modelo pide una tool que no se le ofreció en ese turno, el bridge se la pasa igual a Pi (`engine.ts:190`). Esto afecta los subagentes que tienen tools restringidas."
+  "3. Una tool call que llega después de que terminó el turno se cuela en el turno siguiente."
+  "4. En `acp.ts`, si falla el `initialize`, queda un proceso `agy` huérfano. Y si `agy` nunca responde, todo se cuelga porque no hay timeout."
 
 ## Tasks
 
@@ -19,6 +24,11 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - [x] T6 [S1] Installed into Gentle Shell (`pi install` local path → settings.json packages); gentle-shell -p with full toolset works after schema sanitization; subagent gentle-ai-explore ran on antigravity-bridge/gemini-3.8-flash via profiles.json (task mwgksvul-1-e865). Route: inline. Commit: (T6 commit)
 - [x] T7 [S1] Public README (install, assign models via /gentle:profiles, how it works, limits, ToS note). Route: inline. Commit: —
 - [x] T8 [S3,S1] Guard hardening from verify (task mwgkurta-5-bk25): (1) deny hook must never fail open: whole script in try/catch, always prints a deny JSON and exits 0 unless the name is allowed; (2) strict name check: typeof string and /^<prefix>[A-Za-z0-9_.-]+$/ anchored; (3) unguessable MCP server name per bridge process (e.g. `pi` + 8 random hex chars) so a workspace MCP server cannot collide; the hook gets the allowed prefix via env in its hooks.json command; the engine permission handler allows only the same prefix (derive from deps.mcpServer(key).name) and picks `allow_once` only (reject otherwise, cancelled if none); TOOL_POLICY text must not hardcode `mcp_pi_`; (4) src/index.ts falls back to context.systemPrompt / context.tools when the transcript has no system message; (5) src/acp.ts keeps the last ~2KB of agy stderr and appends it to the child-exit / spawn error messages; (6) README troubleshooting: missing binary shows `spawn agy ENOENT`; document the remaining limits (env passed through to agy; hook and shim run with process.execPath). Tests: the verify-provided test/deny-hook.test.ts table (adapted to the prefix env), engine permission tests updated, a test that tools/list prefix in hook config matches the server name. Route: gentle-ai-worker (context backstop). Commit: —
+- [x] T9 [S4.1] Honor an abort that fires during session/new or session/set_model: the turn ends aborted, session/prompt is not sent. Route: inline. Commit: 66c5118
+- [x] T10 [S4.2] Reject tool calls whose name is not in the current turn's offered tools (error result to agy, never a Pi toolCall). Route: inline. Commit: 66c5118
+- [x] T11 [S4.3] Reject tool calls that arrive when no prompt is active, so they never leak into the next turn. Route: inline. Commit: 66c5118
+- [x] T12 [S4.4] acp.ts: kill the child when initialize fails (no orphan) and time out initialize so a silent agy rejects instead of hanging. Route: inline. Commit: 410b5cc
+- [ ] T13 [S4] Native review of the hardening commits. Route: native review. Commit: —
 
 ## Log
 
@@ -35,3 +45,6 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - L11 (user): "puede ser porque tenemos abierto gentle ai en este momento? capas hay que reiniciarlo"
 - L12 (evidence, verify mwgkurta-5-bk25): S1 pass, S2 pass, S3 partial: hook throws on stdin `null` (exit 1, no stdout); name check coerces non-strings and is unanchored (`["mcp_pi_x"]`, `mcp_pi_`, `mcp_pi_bash\nrm` allowed); predictable `pi` server name could collide with a workspace MCP server; pickOption may choose allow_always; index ignores context.systemPrompt/tools; agy stderr discarded.
 - L13 (evidence, T8): 42/42 tests (verifier table in test/deny-hook.test.ts). Live: PONG 5s; bash+read loop 13s; gentle-shell full toolset on gemini-4-argon 23s (tool shown as mcp_pi9bcca62c_read: random server name works); real createIsolation hook + workspace .agents/hooks.json returning allow-all → write_file and run_command failed, no files created, Pi MCP tool completed. No leftover pi-agy-* dirs.
+- L14 (evidence, Judgment Day 2026-11-16): APPROVED after 1 round; CRITICAL JD-A-001/JD-B-001 (superseded same-key stream hung) fixed in f034113; 43/43 tests; warnings JD-A-002/JD-B-002, JD-A-003/JD-B-004, JD-B-003, JD-B-005 became S4.1-S4.4.
+- L15 (user): "comitea y despues arregla los puntos antes de publicar y passamos otra review"
+- L16 (evidence, T9-T12): RED observed for 6 new tests on pre-fix code (2 abort failures, 2 tool-call hangs, 2 acp init failures); GREEN 49/49. Live e2e via Gentle Shell pi: PONG, read, write OK; --tools read → model reports NOWRITE, no hacked.txt; 0 leftover agy processes.
