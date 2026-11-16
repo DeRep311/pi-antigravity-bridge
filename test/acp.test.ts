@@ -106,3 +106,31 @@ test("spawn failure message names the missing binary", async () => {
   const c = new AcpClient({ command: "agy-missing-binary-xyz", args: [] });
   await assert.rejects(c.getAcp(), /ENOENT/);
 });
+
+const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+async function initCase(mode: "fail" | "hang", extra: object = {}) {
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const pidfile = join(mkdtempSync(join(tmpdir(), "acp-init-")), "pid");
+  const c = new AcpClient({ command: process.execPath, args: [fake], env: { ...process.env, FAKE_ACP_INIT: mode, FAKE_ACP_PIDFILE: pidfile }, ...extra });
+  const err = await c.getAcp().then(() => null, (e) => e as Error);
+  await new Promise((r) => setTimeout(r, 100));
+  return { c, err, pid: Number(readFileSync(pidfile, "utf8")) };
+}
+
+test("initialize failure kills the agy child instead of orphaning it", async () => {
+  const { c, err, pid } = await initCase("fail");
+  try {
+    assert.match(String(err?.message), /not logged in/);
+    assert.equal(alive(pid), false, "the failed child must be killed");
+  } finally { c.kill(); }
+});
+
+test("an initialize that never answers times out and kills the child", async () => {
+  const { c, err, pid } = await initCase("hang", { initTimeoutMs: 150 });
+  try {
+    assert.match(String(err?.message), /initialize timed out/);
+    assert.equal(alive(pid), false, "the silent child must be killed");
+  } finally { c.kill(); }
+});

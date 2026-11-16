@@ -3,7 +3,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AcpLike } from "./types.ts";
 
-export type AcpClientOptions = { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv };
+export type AcpClientOptions = {
+  command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv;
+  /** How long agy may take to answer `initialize` before the child is killed (default 30s). */
+  initTimeoutMs?: number;
+};
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
 
@@ -58,7 +62,24 @@ export class AcpClient implements AcpLike {
     createInterface({ input: child.stdout! }).on("line", (line) => this.onLine(child, line));
     this.setRef(child, false);
     await spawned;
-    await this.send(child, "initialize", { protocolVersion: 1, clientCapabilities: {} });
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutMs = this.opts.initTimeoutMs ?? 30_000;
+    try {
+      await Promise.race([
+        this.send(child, "initialize", { protocolVersion: 1, clientCapabilities: {} }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(this.withStderr(new Error(`agy acp initialize timed out after ${timeoutMs}ms`))), timeoutMs);
+          timer.unref();
+        }),
+      ]);
+    } catch (err) {
+      // A child that cannot initialize is never reused: kill it so a retry does not orphan it.
+      if (this.child === child) this.kill("SIGKILL");
+      else child.kill("SIGKILL");
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private withStderr(err: Error): Error {

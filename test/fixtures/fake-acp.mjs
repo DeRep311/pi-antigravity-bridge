@@ -1,11 +1,15 @@
 // Fake `agy acp` child: newline JSON-RPC over stdio, driven by method name.
 import { createInterface } from "node:readline";
+import { writeFileSync } from "node:fs";
 const send = (m) => process.stdout.write(JSON.stringify(m) + "\n");
 let initParams;
 const waiting = new Map();
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   if (m.method === undefined) { const w = waiting.get(m.id); waiting.delete(m.id); return w?.(m); }
+  if (m.method === "initialize" && process.env.FAKE_ACP_PIDFILE) writeFileSync(process.env.FAKE_ACP_PIDFILE, String(process.pid));
+  if (m.method === "initialize" && process.env.FAKE_ACP_INIT === "fail") return send({ jsonrpc: "2.0", id: m.id, error: { code: -32000, message: "not logged in" } });
+  if (m.method === "initialize" && process.env.FAKE_ACP_INIT === "hang") return;
   if (m.method === "initialize") { initParams = m.params; return send({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: 1 } }); }
   if (m.id === undefined) { return send({ jsonrpc: "2.0", method: "echo/note", params: { got: m.method, params: m.params } }); }
   switch (m.method) {
