@@ -189,7 +189,11 @@ export class BridgeEngine {
   /** Entry point for the shim's tools/call: resolves when Pi delivers the tool result. */
   handleToolCall(key: string, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
     const st = this.states.get(key);
-    if (!st || st.dead) return Promise.resolve({ content: [{ type: "text", text: "No active Pi turn for this tool call." }], isError: true });
+    const reject = (text: string) => Promise.resolve<McpToolResult>({ content: [{ type: "text", text }], isError: true });
+    // A call outside an agy prompt would otherwise be flushed into the next, unrelated Pi turn.
+    if (!st || st.dead || !st.promptActive) return reject("No active Pi turn for this tool call.");
+    // Only tools offered to this turn may reach Pi (subagents can have a narrowed tool list).
+    if (!st.tools.some((t) => t.name === name)) return reject(`Tool ${name} is not available in this turn.`);
     return new Promise((resolve) => {
       st.queued.push({ id: `agy_${randomUUID().slice(0, 12)}`, name, args: args ?? {}, resolve });
       this.scheduleFlush(st);
@@ -247,6 +251,7 @@ export class BridgeEngine {
       const fresh = messages.slice(st.consumedLen + 1);
       if (fresh.length > 0 && fresh.every((m) => m.role === "user")) {
         await this.selectModel(st, input);
+        if (this.abortedBeforePrompt(input, sink)) return;
         this.attach(st, input, sink, messages);
         this.prompt(st, renderNewUserMessages(fresh));
         return;
@@ -256,8 +261,16 @@ export class BridgeEngine {
     // 3) New or diverged conversation: fresh agy session with the transcript replayed.
     if (st) this.discard(st, true);
     st = await this.createSession(input, toolsDigest, systemDigest);
+    if (this.abortedBeforePrompt(input, sink)) return;
     this.attach(st, input, sink, messages);
     this.prompt(st, renderReplayPrompt(input.systemPrompt, messages, toolPrefix(this.deps.mcpServer(input.key).name)));
+  }
+
+  /** An abort fired while session/new or session/set_model was in flight: end the turn, send no prompt. */
+  private abortedBeforePrompt(input: StreamInput, sink: EventSink): boolean {
+    if (!input.signal?.aborted) return false;
+    new MessageBuilder(sink, this.base(input.modelId)).fail("aborted", "Aborted");
+    return true;
   }
 
   private async createSession(input: StreamInput, toolsDigest: string, systemDigest: string): Promise<SessionState> {

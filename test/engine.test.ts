@@ -255,3 +255,67 @@ test("a stream superseded by a newer turn on the same key ends with an error ins
   await tick();
   assert.equal(second.last().type, "done");
 });
+
+test("abort while agy is still creating the session ends the turn aborted and never sends session/prompt", async () => {
+  const { acp, engine } = setup();
+  const ctrl = new AbortController();
+  const sink = new Sink();
+  engine.stream(input([user("long task")], { signal: ctrl.signal }), sink);
+  ctrl.abort(); // fires while session/new and session/set_model are in flight
+  await tick();
+  assert.deepEqual(acp.methods(), ["session/new", "session/set_model"]);
+  assert.equal(sink.last().type, "error");
+  assert.equal(sink.last().reason, "aborted");
+  assert.equal(sink.ended, true);
+});
+
+test("abort while switching the model on a follow-up turn never sends session/prompt", async () => {
+  const { acp, engine } = setup();
+  const first = new Sink();
+  engine.stream(input([user("hi")]), first);
+  await tick();
+  acp.prompts[0].resolve({ stopReason: "end_turn" });
+  await tick();
+  const ctrl = new AbortController();
+  const second = new Sink();
+  engine.stream(input([user("hi"), first.last().message, user("again")], { reasoning: "low", signal: ctrl.signal }), second);
+  ctrl.abort();
+  await tick();
+  assert.equal(acp.methods().filter((m) => m === "session/prompt").length, 1);
+  assert.equal(second.last().type, "error");
+  assert.equal(second.last().reason, "aborted");
+  assert.equal(second.ended, true);
+});
+
+test("a tool call for a tool not offered this turn is rejected and never reaches Pi", async () => {
+  const { engine } = setup();
+  const sink = new Sink();
+  engine.stream(input([user("do it")]), sink);
+  await tick();
+  const result = await engine.handleToolCall("k1", "bash", { command: "rm -rf /" });
+  await tick();
+  assert.equal(result.isError, true);
+  assert.match((result.content[0] as any).text, /not available/);
+  assert.equal(sink.types().includes("toolcall_start"), false);
+  assert.equal(sink.ended, false, "the turn stays open for agy to continue");
+});
+
+test("a tool call arriving after the agy turn ended is rejected and does not leak into the next turn", async () => {
+  const { acp, engine } = setup();
+  const first = new Sink();
+  engine.stream(input([user("hi")]), first);
+  await tick();
+  acp.prompts[0].resolve({ stopReason: "end_turn" });
+  await tick();
+  const late = await engine.handleToolCall("k1", "read", { path: "stale" });
+  assert.equal(late.isError, true);
+  assert.match((late.content[0] as any).text, /No active/);
+
+  const second = new Sink();
+  engine.stream(input([user("hi"), first.last().message, user("next")]), second);
+  await tick();
+  assert.equal(second.types().includes("toolcall_start"), false);
+  acp.prompts[1].resolve({ stopReason: "end_turn" });
+  await tick();
+  assert.equal(second.last().reason, "stop");
+});
