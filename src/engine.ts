@@ -383,6 +383,10 @@ export class BridgeEngine {
     if (st.dead) return;
     if (cancel && st.promptActive) st.acp.notify("session/cancel", { sessionId: st.sessionId });
     st.dead = true;
+    // A Pi stream still attached (superseded on the same key) must not hang.
+    const open = st.builder;
+    st.builder = null;
+    open?.fail("aborted", "Superseded by a newer turn on the same session");
     if (st.flushTimer) clearTimeout(st.flushTimer);
     this.failParked(st, "The Pi turn was cancelled.");
     st.detachAbort?.();

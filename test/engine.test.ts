@@ -239,3 +239,19 @@ test("permission requests: Pi MCP tools are allowed once, everything else is rej
     { outcome: { outcome: "selected", optionId: "r1" } });
   await assert.rejects(acp.clientRequest("fs/write_text_file", { path: "/etc/x" }), /not supported/);
 });
+
+test("a stream superseded by a newer turn on the same key ends with an error instead of hanging", async () => {
+  const { acp, engine } = setup();
+  const first = new Sink();
+  engine.stream(input([user("one")]), first);
+  await tick();
+  const second = new Sink();
+  engine.stream(input([user("other")]), second);
+  await tick();
+  assert.equal(first.last()?.type, "error");
+  assert.match(first.last().error.errorMessage, /Superseded by a newer turn/);
+  assert.equal(first.ended, true);
+  acp.prompts[1].resolve({ stopReason: "end_turn" });
+  await tick();
+  assert.equal(second.last().type, "done");
+});
