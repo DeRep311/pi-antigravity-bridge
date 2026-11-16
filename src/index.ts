@@ -9,6 +9,7 @@ import { createIsolation } from "./isolation.ts";
 import { generateServerName, resolveContext, toolPrefix } from "./naming.ts";
 import { MODELS } from "./models.ts";
 import { startRelay } from "./relay.ts";
+import { onTerminate } from "./signals.ts";
 import type { McpServerSpec, PiMessage, PiTool } from "./types.ts";
 
 const PROVIDER = "antigravity-bridge";
@@ -38,7 +39,9 @@ function getRuntime(): Promise<Runtime> {
     relayPath = relay.path;
     // Ordered shutdown: stop agy first so it cannot recreate files, then remove the isolated dir.
     process.removeListener("exit", iso.cleanup);
-    process.once("exit", () => { acp.kill("SIGKILL"); iso.cleanup(); });
+    const cleanup = () => { acp.kill("SIGKILL"); iso.cleanup(); relay.cleanupSync(); };
+    process.once("exit", cleanup);
+    onTerminate(cleanup); // SIGTERM/SIGINT/SIGHUP never emit 'exit'
     return { engine };
   })();
   runtime = p;

@@ -13,7 +13,7 @@ export interface RelayEngine {
   handleToolCall(session: string, name: string, args: Record<string, unknown>): Promise<McpToolResult>;
 }
 
-export type Relay = { path: string; close(): Promise<void> };
+export type Relay = { path: string; close(): Promise<void>; /** Removes the socket dir synchronously (idempotent), for exit and signal handlers. */ cleanupSync(): void };
 
 export async function startRelay(engine: RelayEngine, socketPath?: string): Promise<Relay> {
   let ownDir: string | undefined;
@@ -44,6 +44,7 @@ export async function startRelay(engine: RelayEngine, socketPath?: string): Prom
   process.once("exit", removeOwnDir);
   return {
     path,
+    cleanupSync: removeOwnDir,
     close: () => new Promise<void>((resolve) => {
       server.close(() => { process.removeListener("exit", removeOwnDir); removeOwnDir(); resolve(); });
       server.closeAllConnections?.();

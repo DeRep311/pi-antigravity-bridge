@@ -65,14 +65,14 @@ Pi (streamSimple) ──ACP JSON-RPC──▶ agy acp --gemini-dir <temp dir>
 |-------|--------------|
 | `src/engine.ts` | Maps each Pi session to an agy ACP session; streams text and thinking; turns MCP tool calls into Pi tool calls and resumes agy with Pi's results. |
 | `src/mcp-shim.mjs`, `src/relay.ts` | Stdio MCP server that agy starts per session; it forwards `tools/list` and `tools/call` to the bridge over a Unix socket. |
-| `src/isolation.ts`, `src/deny-native-hook.mjs` | Temporary agy config directory with a `PreToolUse` hook that only allows the bridge's own MCP tools (`mcp_<random server name>_*`; the server name is regenerated per Pi process). It is deleted on exit. |
+| `src/isolation.ts`, `src/deny-native-hook.mjs` | Temporary agy config directory with a `PreToolUse` hook that only allows the bridge's own MCP tools (`mcp_<random server name>_*`; the server name is regenerated per Pi process). It is deleted on exit and when SIGTERM, SIGINT or SIGHUP terminates Pi. |
 | `src/schema.ts` | Rewrites Pi tool schemas into the JSON Schema subset Gemini accepts (string-only enums). |
 
 ## Limits
 
 - The model catalog is static: the three families above. Exact agy ids still work.
 - When Pi rewrites history (compaction, edits, branching), the bridge opens a fresh agy session and replays the transcript as text.
-- One `agy acp` process runs per Pi process and is stopped when Pi exits.
+- One `agy acp` process runs per Pi process and is stopped when Pi exits or is terminated by SIGTERM, SIGINT or SIGHUP (not SIGKILL, which cannot be caught). A signal that Pi handles itself, such as SIGINT interrupting a turn, leaves agy and its config in place.
 - Tool calls have been tested up to 70 seconds. agy has an MCP timeout whose default is unknown, so very long tools may be cut off.
 - The environment of Pi is passed through to `agy`, and the deny hook and MCP shim run with the same Node binary as Pi (`process.execPath`).
 - If `agy` itself fails, the last ~2 KB of its stderr is appended to the error message.
