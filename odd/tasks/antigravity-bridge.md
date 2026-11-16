@@ -31,7 +31,7 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - [x] T12 [S4.4] acp.ts: kill the child when initialize fails (no orphan) and time out initialize so a silent agy rejects instead of hanging. Route: inline. Commit: 410b5cc
 - [x] T13 [S4] Native review of the hardening commits. Route: native review (lineage review-dbe1ea54d2b9d9dc, approved, acknowledged). Commit: b0fc358..30e0300
 - [x] T14 [S5] Signal cleanup: on SIGTERM/SIGINT/SIGHUP SIGKILL the agy child and remove the pi-agy-* isolation dir and pi-agy-relay-* socket dir; if the bridge's handler is the only listener for that signal, re-raise it so the process still terminates by the signal; if Pi has its own listeners, do not exit. Route: gentle-ai-worker (context backstop). Commit: c5e3584, 42543d1
-- [ ] T15 [S5] Publish to GitHub (DeRep311/pi-antigravity-bridge, public) and push main. Route: inline. Commit: —
+- [x] T15 [S5] Publish to GitHub (DeRep311/pi-antigravity-bridge, public) and push main. Route: inline. Commit: pushed f86709e to https://github.com/DeRep311/pi-antigravity-bridge
 
 ## Log
 
@@ -54,3 +54,4 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - L17 (evidence, T13): independent verify (task mwj9hjca-5-ge72) S4.1-S4.4 pass, no regressions. Native review b0fc358..30e0300 (risk, resilience, reliability) approved and acknowledged; advisories only: fixed 100ms sleep before liveness probe in acp init tests; 30s default initTimeoutMs may kill a slow cold start; discard() fail on attached builder (safe: complete() clears st.builder before finishing).
 - L18 (user): "si hace la limpieza y luego lo subimos"
 - L19 (evidence, T14): worker draft cleaned up even when the host had its own SIGINT listener; Pi registers process.on('SIGINT', interrupt|ignoreSigint) and keeps running, so that would delete the deny-hook dir and let a respawned agy run unguarded. Fixed: cleanup only when the bridge is the sole listener (then re-raise). RED: new host-SIGINT test fails on the draft, all 4 signal tests leak dirs with a no-op onTerminate; GREEN 53/53. Live: SIGTERM mid-turn → pi exit 143, 0 agy, 0 pi-agy dirs. Verify (task mwjdpmd7-7-1phe) pass; advisory: a host listener registered with process.once before the bridge is removed before ours runs. Native review 9c80448..42543d1 approved+acknowledged (review-4fa789b00f020e24); advisories: fixture mirrors index wiring, listener-count heuristic, SIGKILL then rm without waiting, silent cleanup errors. Also fixed leaked acp-init-* pidfile dirs from the T12 tests.
+- L20 (evidence, T15): GitHub repo DeRep311/pi-antigravity-bridge already existed public and empty (created 2026-11-14); added origin and pushed main. Fresh clone from GitHub: 53/53 tests. Not published to npm.
