@@ -13,6 +13,7 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
   "2. Si el modelo pide una tool que no se le ofreció en ese turno, el bridge se la pasa igual a Pi (`engine.ts:190`). Esto afecta los subagentes que tienen tools restringidas."
   "3. Una tool call que llega después de que terminó el turno se cuela en el turno siguiente."
   "4. En `acp.ts`, si falla el `initialize`, queda un proceso `agy` huérfano. Y si `agy` nunca responde, todo se cuelga porque no hay timeout."
+- S5. Cleanup on signal termination before publishing: "si hace la limpieza y luego lo subimos". The point offered to the user: "Los directorios temporales y el proceso `agy` solo se limpian cuando Pi sale normalmente, no si lo matan con SIGTERM o SIGINT." Cleanup must also run on SIGTERM, SIGINT and SIGHUP without changing how Pi itself reacts to those signals.
 
 ## Tasks
 
@@ -29,6 +30,8 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - [x] T11 [S4.3] Reject tool calls that arrive when no prompt is active, so they never leak into the next turn. Route: inline. Commit: 66c5118
 - [x] T12 [S4.4] acp.ts: kill the child when initialize fails (no orphan) and time out initialize so a silent agy rejects instead of hanging. Route: inline. Commit: 410b5cc
 - [x] T13 [S4] Native review of the hardening commits. Route: native review (lineage review-dbe1ea54d2b9d9dc, approved, acknowledged). Commit: b0fc358..30e0300
+- [x] T14 [S5] Signal cleanup: on SIGTERM/SIGINT/SIGHUP SIGKILL the agy child and remove the pi-agy-* isolation dir and pi-agy-relay-* socket dir; if the bridge's handler is the only listener for that signal, re-raise it so the process still terminates by the signal; if Pi has its own listeners, do not exit. Route: gentle-ai-worker (context backstop). Commit: c5e3584, 42543d1
+- [ ] T15 [S5] Publish to GitHub (DeRep311/pi-antigravity-bridge, public) and push main. Route: inline. Commit: —
 
 ## Log
 
@@ -49,3 +52,5 @@ Pattern reference: `~/.gentle-shell/agent/npm/node_modules/pi-claude-bridge` (pr
 - L15 (user): "comitea y despues arregla los puntos antes de publicar y passamos otra review"
 - L16 (evidence, T9-T12): RED observed for 6 new tests on pre-fix code (2 abort failures, 2 tool-call hangs, 2 acp init failures); GREEN 49/49. Live e2e via Gentle Shell pi: PONG, read, write OK; --tools read → model reports NOWRITE, no hacked.txt; 0 leftover agy processes.
 - L17 (evidence, T13): independent verify (task mwj9hjca-5-ge72) S4.1-S4.4 pass, no regressions. Native review b0fc358..30e0300 (risk, resilience, reliability) approved and acknowledged; advisories only: fixed 100ms sleep before liveness probe in acp init tests; 30s default initTimeoutMs may kill a slow cold start; discard() fail on attached builder (safe: complete() clears st.builder before finishing).
+- L18 (user): "si hace la limpieza y luego lo subimos"
+- L19 (evidence, T14): worker draft cleaned up even when the host had its own SIGINT listener; Pi registers process.on('SIGINT', interrupt|ignoreSigint) and keeps running, so that would delete the deny-hook dir and let a respawned agy run unguarded. Fixed: cleanup only when the bridge is the sole listener (then re-raise). RED: new host-SIGINT test fails on the draft, all 4 signal tests leak dirs with a no-op onTerminate; GREEN 53/53. Live: SIGTERM mid-turn → pi exit 143, 0 agy, 0 pi-agy dirs. Verify (task mwjdpmd7-7-1phe) pass; advisory: a host listener registered with process.once before the bridge is removed before ours runs. Native review 9c80448..42543d1 approved+acknowledged (review-4fa789b00f020e24); advisories: fixture mirrors index wiring, listener-count heuristic, SIGKILL then rm without waiting, silent cleanup errors. Also fixed leaked acp-init-* pidfile dirs from the T12 tests.
